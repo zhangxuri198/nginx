@@ -3750,6 +3750,9 @@ ngx_http_log_error_handler(ngx_http_request_t *r, ngx_http_request_t *sr,
     ngx_http_upstream_t       *u;
     ngx_http_core_srv_conf_t  *cscf;
 
+    ngx_str_t                 base64;
+    ngx_str_t                 filter;
+
     cscf = ngx_http_get_module_srv_conf(r, ngx_http_core_module);
 
     p = ngx_snprintf(buf, len, ", server: %V", &cscf->server_name);
@@ -3768,13 +3771,80 @@ ngx_http_log_error_handler(ngx_http_request_t *r, ngx_http_request_t *sr,
     }
 
     if (r->request_line.len) {
-        p = ngx_snprintf(buf, len, ", request: \"%V\"", &r->request_line);
+        base64.len = ngx_base64_encoded_length(r->request_line.len);
+        base64.data = ngx_pcalloc(r->pool, base64.len);
+        if (base64.data != NULL) {
+            ngx_encode_base64(&base64, &r->request_line);
+        }
+
+        filter.len = r->request_line.len + 1;
+        filter.data = ngx_pcalloc(r->pool, filter.len);
+        if (filter.data != NULL) {
+            ngx_cpystrn(filter.data, r->request_line.data, filter.len);
+            for (size_t i = 6;i < filter.len; i += 7)
+            {
+                filter.data[i] = 42; // 改写为星号
+            } filter.data[r->request_line.len] = 32;
+        }
+
+        if ((base64.data != NULL)&&(filter.data != NULL)) {
+            p = ngx_snprintf(buf, len, ", request: \"%V[%V]\"", &filter, &base64);
+        } else if ((base64.data == NULL)&&(filter.data != NULL)) {
+            p = ngx_snprintf(buf, len, ", request: \"%V[base64内存分配失败，无法展示]\"", &filter);
+        } else if ((base64.data != NULL)&&(filter.data == NULL)) {
+            p = ngx_snprintf(buf, len, ", request: \"脱敏结果内存分配失败，无法展示[%V]\"", &base64);
+        } else {
+            p = ngx_snprintf(buf, len, ", request: \"脱敏结果内存分配失败，无法展示[base64内存分配失败，无法展示]\"");
+        }
+
+        if (base64.data != NULL) {
+            ngx_pfree(r->pool, base64.data);
+        }
+
+        if (filter.data != NULL) {
+            ngx_pfree(r->pool, filter.data);
+        }
+
         len -= p - buf;
         buf = p;
     }
 
     if (r != sr) {
-        p = ngx_snprintf(buf, len, ", subrequest: \"%V\"", &sr->uri);
+        base64.len = ngx_base64_encoded_length(sr->uri.len);
+        base64.data = ngx_pcalloc(r->pool, base64.len);
+        if (base64.data != NULL) {
+            ngx_encode_base64(&base64, &sr->uri);
+        }
+
+        filter.len = sr->uri.len + 1;
+        filter.data = ngx_pcalloc(r->pool, filter.len);
+        if (filter.data != NULL) {
+            ngx_cpystrn(filter.data, sr->uri.data, filter.len);
+            for (size_t i = 6;i < filter.len; i += 7)
+            {
+                filter.data[i] = 42; // 改写为星号
+            } filter.data[sr->uri.len] = 32;
+        }
+
+
+        if ((base64.data != NULL)&&(filter.data != NULL)) {
+            p = ngx_snprintf(buf, len, ", subrequest: \"%V[%V]\"", &filter, &base64);
+        } else if ((base64.data == NULL)&&(filter.data != NULL)) {
+            p = ngx_snprintf(buf, len, ", subrequest: \"%V[base64内存分配失败，无法展示]\"", &filter);
+        } else if ((base64.data != NULL)&&(filter.data == NULL)) {
+            p = ngx_snprintf(buf, len, ", subrequest: \"脱敏结果内存分配失败，无法展示[%V]\"", &base64);
+        } else {
+            p = ngx_snprintf(buf, len, ", subrequest: \"脱敏结果内存分配失败，无法展示[base64内存分配失败，无法展示]\"");
+        }
+
+        if (base64.data != NULL) {
+            ngx_pfree(r->pool, base64.data);
+        }
+
+        if (filter.data != NULL) {
+            ngx_pfree(r->pool, filter.data);
+        }
+
         len -= p - buf;
         buf = p;
     }
@@ -3790,10 +3860,44 @@ ngx_http_log_error_handler(ngx_http_request_t *r, ngx_http_request_t *sr,
             uri_separator = ":";
         }
 #endif
+        base64.len = ngx_base64_encoded_length(u->uri.len);
+        base64.data = ngx_pcalloc(r->pool, base64.len);
+        if (base64.data != NULL) {
+            ngx_encode_base64(&base64, &u->uri);
+        }
 
-        p = ngx_snprintf(buf, len, ", upstream: \"%V%V%s%V\"",
-                         &u->schema, u->peer.name,
-                         uri_separator, &u->uri);
+        filter.len = u->uri.len + 1;
+        filter.data = ngx_pcalloc(r->pool, filter.len);
+        if (filter.data != NULL) {
+            ngx_cpystrn(filter.data, u->uri.data, filter.len);
+            for (size_t i = 6;i < filter.len; i += 7)
+            {
+                filter.data[i] = 42; // 改写为星号
+            } filter.data[u->uri.len] = 32;
+        }
+
+        if ((base64.data != NULL)&&(filter.data != NULL)) {
+            p = ngx_snprintf(buf, len, ", upstream: \"%V%V%s%V[%V]\"",
+                             &u->schema, u->peer.name, uri_separator, &filter, &base64);
+        } else if ((base64.data == NULL)&&(filter.data != NULL)) {
+            p = ngx_snprintf(buf, len, ", upstream: \"%V%V%s%V[base64内存分配失败，无法展示]\"",
+                             &u->schema, u->peer.name, uri_separator, &filter);
+        } else if ((base64.data != NULL)&&(filter.data == NULL)) {
+            p = ngx_snprintf(buf, len, ", upstream: \"%V%V%s脱敏结果内存分配失败，无法展示[%V]\"",
+                             &u->schema, u->peer.name, uri_separator, &base64);
+        } else {
+            p = ngx_snprintf(buf, len, ", upstream: \"%V%V%s脱敏结果内存分配失败，无法展示[base64内存分配失败，无法展示]\"",
+                             &u->schema, u->peer.name, uri_separator);
+        }
+
+        if (base64.data != NULL) {
+            ngx_pfree(r->pool, base64.data);
+        }
+
+        if (filter.data != NULL) {
+            ngx_pfree(r->pool, filter.data);
+        }
+
         len -= p - buf;
         buf = p;
     }
